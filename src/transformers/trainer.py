@@ -2537,7 +2537,7 @@ class Trainer:
             labels = inputs.pop("labels")
         else:
             labels = None
-        with xp.StepTrace("compute_loss", step_num=self._globalstep_last_logged)
+        with xp.StepTrace("compute_loss", step_num=self._globalstep_last_logged):
             outputs = model(**inputs)
         # Save past state if it exists
         # TODO: this needs to be fixed and made cleaner later.
