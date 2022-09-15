@@ -862,48 +862,49 @@ class GPT2Model(GPT2PreTrainedModel):
         all_self_attentions = () if output_attentions else None
         all_cross_attentions = () if output_attentions and self.config.add_cross_attention else None
         all_hidden_states = () if output_hidden_states else None
-        for i, (block, layer_past) in enumerate(zip(self.h, past_key_values)):
-            
-            # Model parallel
-            if self.model_parallel:
-                torch.cuda.set_device(hidden_states.device)
-                # Ensure layer_past is on same device as hidden_states (might not be correct)
-                if layer_past is not None:
-                    layer_past = tuple(past_state.to(hidden_states.device) for past_state in layer_past)
-                # Ensure that attention_mask is always on the same device as hidden_states
-                if attention_mask is not None:
-                    attention_mask = attention_mask.to(hidden_states.device)
-                if isinstance(head_mask, torch.Tensor):
-                    head_mask = head_mask.to(hidden_states.device)
-            if output_hidden_states:
-                all_hidden_states = all_hidden_states + (hidden_states,)
+        xp.Trace('loop_GPTblock'):
+            for i, (block, layer_past) in enumerate(zip(self.h, past_key_values)):
+                
+                # Model parallel
+                if self.model_parallel:
+                    torch.cuda.set_device(hidden_states.device)
+                    # Ensure layer_past is on same device as hidden_states (might not be correct)
+                    if layer_past is not None:
+                        layer_past = tuple(past_state.to(hidden_states.device) for past_state in layer_past)
+                    # Ensure that attention_mask is always on the same device as hidden_states
+                    if attention_mask is not None:
+                        attention_mask = attention_mask.to(hidden_states.device)
+                    if isinstance(head_mask, torch.Tensor):
+                        head_mask = head_mask.to(hidden_states.device)
+                if output_hidden_states:
+                    all_hidden_states = all_hidden_states + (hidden_states,)
 
-            if self.gradient_checkpointing and self.training:
+                if self.gradient_checkpointing and self.training:
 
-                if use_cache:
-                    logger.warning(
-                        "`use_cache=True` is incompatible with gradient checkpointing. Setting `use_cache=False`..."
+                    if use_cache:
+                        logger.warning(
+                            "`use_cache=True` is incompatible with gradient checkpointing. Setting `use_cache=False`..."
+                        )
+                        use_cache = False
+
+                    def create_custom_forward(module):
+                        def custom_forward(*inputs):
+                            # None for past_key_value
+                            return module(*inputs, use_cache, output_attentions)
+
+                        return custom_forward
+
+                    outputs = torch.utils.checkpoint.checkpoint(
+                        create_custom_forward(block),
+                        hidden_states,
+                        None,
+                        attention_mask,
+                        head_mask[i],
+                        encoder_hidden_states,
+                        encoder_attention_mask,
                     )
-                    use_cache = False
-
-                def create_custom_forward(module):
-                    def custom_forward(*inputs):
-                        # None for past_key_value
-                        return module(*inputs, use_cache, output_attentions)
-
-                    return custom_forward
-
-                outputs = torch.utils.checkpoint.checkpoint(
-                    create_custom_forward(block),
-                    hidden_states,
-                    None,
-                    attention_mask,
-                    head_mask[i],
-                    encoder_hidden_states,
-                    encoder_attention_mask,
-                )
-            else:
-                with xp.StepTrace("GPTblock", step_num=i):
+                else:
+                    #with xp.StepTrace("GPTblock", step_num=i):
                     outputs = block(
                         hidden_states,
                         layer_past=layer_past,
@@ -915,20 +916,20 @@ class GPT2Model(GPT2PreTrainedModel):
                         output_attentions=output_attentions,
                     )
 
-            hidden_states = outputs[0]
-            if use_cache is True:
-                presents = presents + (outputs[1],)
+                hidden_states = outputs[0]
+                if use_cache is True:
+                    presents = presents + (outputs[1],)
 
-            if output_attentions:
-                all_self_attentions = all_self_attentions + (outputs[2 if use_cache else 1],)
-                if self.config.add_cross_attention:
-                    all_cross_attentions = all_cross_attentions + (outputs[3 if use_cache else 2],)
+                if output_attentions:
+                    all_self_attentions = all_self_attentions + (outputs[2 if use_cache else 1],)
+                    if self.config.add_cross_attention:
+                        all_cross_attentions = all_cross_attentions + (outputs[3 if use_cache else 2],)
 
-            # Model Parallel: If it's the last layer for that device, put things on the next device
-            if self.model_parallel:
-                for k, v in self.device_map.items():
-                    if i == v[-1] and "cuda:" + str(k) != self.last_device:
-                        hidden_states = hidden_states.to("cuda:" + str(k + 1))
+                # Model Parallel: If it's the last layer for that device, put things on the next device
+                if self.model_parallel:
+                    for k, v in self.device_map.items():
+                        if i == v[-1] and "cuda:" + str(k) != self.last_device:
+                            hidden_states = hidden_states.to("cuda:" + str(k + 1))
 
         hidden_states = self.ln_f(hidden_states)
 
