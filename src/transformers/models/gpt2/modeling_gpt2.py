@@ -191,7 +191,7 @@ class GPT2Attention(nn.Module):
         self.pruned_heads = self.pruned_heads.union(heads)
 
     def _attn(self, query, key, value, attention_mask=None, head_mask=None):
-        attn_weights = torch.matmul(query, key.transpose(-1, -2))
+        attn_weights = torch.einsum('bmld, bmdl->bmll', query, key) #torch.matmul(query, key.transpose(-1, -2))
 
         if self.scale_attn_weights:
             attn_weights = attn_weights / torch.tensor(
@@ -226,7 +226,7 @@ class GPT2Attention(nn.Module):
         if head_mask is not None:
             attn_weights = attn_weights * head_mask
 
-        attn_output = torch.matmul(attn_weights, value)
+        attn_output = torch.einsum('bmlk, bmkd->bmlk', attn_weights, value)#torch.matmul(attn_weights, value)
 
         return attn_output, attn_weights
 
