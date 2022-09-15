@@ -24,7 +24,7 @@ import torch
 import torch.utils.checkpoint
 from torch import nn
 from torch.nn import BCEWithLogitsLoss, CrossEntropyLoss, MSELoss
-
+import torch_xla.debug.profiler as xp
 from ...pytorch_utils import (
     Conv1D,
     find_pruneable_heads_and_indices,
@@ -863,7 +863,7 @@ class GPT2Model(GPT2PreTrainedModel):
         all_cross_attentions = () if output_attentions and self.config.add_cross_attention else None
         all_hidden_states = () if output_hidden_states else None
         for i, (block, layer_past) in enumerate(zip(self.h, past_key_values)):
-
+            
             # Model parallel
             if self.model_parallel:
                 torch.cuda.set_device(hidden_states.device)
@@ -903,16 +903,17 @@ class GPT2Model(GPT2PreTrainedModel):
                     encoder_attention_mask,
                 )
             else:
-                outputs = block(
-                    hidden_states,
-                    layer_past=layer_past,
-                    attention_mask=attention_mask,
-                    head_mask=head_mask[i],
-                    encoder_hidden_states=encoder_hidden_states,
-                    encoder_attention_mask=encoder_attention_mask,
-                    use_cache=use_cache,
-                    output_attentions=output_attentions,
-                )
+                with xp.StepTrace("GPTblock," step_num=self.layer_idx):
+                    outputs = block(
+                        hidden_states,
+                        layer_past=layer_past,
+                        attention_mask=attention_mask,
+                        head_mask=head_mask[i],
+                        encoder_hidden_states=encoder_hidden_states,
+                        encoder_attention_mask=encoder_attention_mask,
+                        use_cache=use_cache,
+                        output_attentions=output_attentions,
+                    )
 
             hidden_states = outputs[0]
             if use_cache is True:
@@ -1060,21 +1061,22 @@ class GPT2LMHeadModel(GPT2PreTrainedModel):
         """
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
-        transformer_outputs = self.transformer(
-            input_ids,
-            past_key_values=past_key_values,
-            attention_mask=attention_mask,
-            token_type_ids=token_type_ids,
-            position_ids=position_ids,
-            head_mask=head_mask,
-            inputs_embeds=inputs_embeds,
-            encoder_hidden_states=encoder_hidden_states,
-            encoder_attention_mask=encoder_attention_mask,
-            use_cache=use_cache,
-            output_attentions=output_attentions,
-            output_hidden_states=output_hidden_states,
-            return_dict=return_dict,
-        )
+        with xp.Trace('run_transformer'):
+            transformer_outputs = self.transformer(
+                input_ids,
+                past_key_values=past_key_values,
+                attention_mask=attention_mask,
+                token_type_ids=token_type_ids,
+                position_ids=position_ids,
+                head_mask=head_mask,
+                inputs_embeds=inputs_embeds,
+                encoder_hidden_states=encoder_hidden_states,
+                encoder_attention_mask=encoder_attention_mask,
+                use_cache=use_cache,
+                output_attentions=output_attentions,
+                output_hidden_states=output_hidden_states,
+                return_dict=return_dict,
+            )
         hidden_states = transformer_outputs[0]
 
         # Set device for model parallelism
