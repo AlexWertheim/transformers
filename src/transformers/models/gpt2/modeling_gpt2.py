@@ -862,7 +862,7 @@ class GPT2Model(GPT2PreTrainedModel):
         all_self_attentions = () if output_attentions else None
         all_cross_attentions = () if output_attentions and self.config.add_cross_attention else None
         all_hidden_states = () if output_hidden_states else None
-        xp.Trace('loop_GPTblock'):
+        with xp.Trace('loop_GPTblock'):
             for i, (block, layer_past) in enumerate(zip(self.h, past_key_values)):
                 
                 # Model parallel
