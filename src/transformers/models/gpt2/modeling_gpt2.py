@@ -903,7 +903,7 @@ class GPT2Model(GPT2PreTrainedModel):
                     encoder_attention_mask,
                 )
             else:
-                with xp.StepTrace("GPTblock," step_num=self.layer_idx):
+                with xp.StepTrace("GPTblock", step_num=self.layer_idx):
                     outputs = block(
                         hidden_states,
                         layer_past=layer_past,
