@@ -22,7 +22,7 @@ import re
 import unicodedata
 from collections import OrderedDict
 from typing import Any, Dict, List, Optional, Tuple, Union, overload
-
+import torch_xla.debug.profiler as xp
 from .tokenization_utils_base import (
     ENCODE_KWARGS_DOCSTRING,
     ENCODE_PLUS_ADDITIONAL_KWARGS_DOCSTRING,
@@ -733,23 +733,23 @@ class PreTrainedTokenizer(PreTrainedTokenizerBase):
             first_ids = get_input_ids(ids)
             second_ids = get_input_ids(pair_ids) if pair_ids is not None else None
             input_ids.append((first_ids, second_ids))
-
-        batch_outputs = self._batch_prepare_for_model(
-            input_ids,
-            add_special_tokens=add_special_tokens,
-            padding_strategy=padding_strategy,
-            truncation_strategy=truncation_strategy,
-            max_length=max_length,
-            stride=stride,
-            pad_to_multiple_of=pad_to_multiple_of,
-            return_attention_mask=return_attention_mask,
-            return_token_type_ids=return_token_type_ids,
-            return_overflowing_tokens=return_overflowing_tokens,
-            return_special_tokens_mask=return_special_tokens_mask,
-            return_length=return_length,
-            return_tensors=return_tensors,
-            verbose=verbose,
-        )
+        with xp.Trace("tokenizer"):
+            batch_outputs = self._batch_prepare_for_model(
+                input_ids,
+                add_special_tokens=add_special_tokens,
+                padding_strategy=padding_strategy,
+                truncation_strategy=truncation_strategy,
+                max_length=max_length,
+                stride=stride,
+                pad_to_multiple_of=pad_to_multiple_of,
+                return_attention_mask=return_attention_mask,
+                return_token_type_ids=return_token_type_ids,
+                return_overflowing_tokens=return_overflowing_tokens,
+                return_special_tokens_mask=return_special_tokens_mask,
+                return_length=return_length,
+                return_tensors=return_tensors,
+                verbose=verbose,
+            )
 
         return BatchEncoding(batch_outputs)
 
