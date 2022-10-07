@@ -1844,7 +1844,9 @@ class Trainer:
                 #         f"After step: free={gb_free: .4f} GB, total={gb_total: .4f} GB"
                 # )
                 # xm.master_print(f"Before step:  free={gb_free: .4f} GB, total={gb_total: .4f} GB")
-   
+            if epoch % 2 == 0:
+                logger.info("Train loss on epoch " f"{epoch} is: " f"{tr_loss_step}")
+
             if step < 0:
                 logger.warning(
                     "There seems to be not a single sample in your epoch_iterator, stopping training at step"
@@ -1879,6 +1881,7 @@ class Trainer:
             # Clean the state at the end of training
             delattr(self, "_past")
 
+        logger.info("Final train loss is: " f"{tr_loss_step}")
         logger.info("\n\nTraining completed. Do not forget to share your model on huggingface.co/models =)\n\n")
         if args.load_best_model_at_end and self.state.best_model_checkpoint is not None:
             # Wait for everyone to get here so we are sur the model has been saved by process 0.
@@ -2159,10 +2162,10 @@ class Trainer:
 
         if is_torch_tpu_available():
             xm.rendezvous("saving_optimizer_states")
-            # xm.save(self.optimizer.state_dict(), os.path.join(output_dir, OPTIMIZER_NAME))
-            # with warnings.catch_warnings(record=True) as caught_warnings:
-            #    xm.save(self.lr_scheduler.state_dict(), os.path.join(output_dir, SCHEDULER_NAME))
-            #    reissue_pt_warnings(caught_warnings)
+            xm.save(self.optimizer.state_dict(), os.path.join(output_dir, OPTIMIZER_NAME))
+            with warnings.catch_warnings(record=True) as caught_warnings:
+                xm.save(self.lr_scheduler.state_dict(), os.path.join(output_dir, SCHEDULER_NAME))
+                reissue_pt_warnings(caught_warnings)
         elif is_sagemaker_mp_enabled():
             opt_state_dict = self.optimizer.local_state_dict(gather_if_shard=False)
             smp.barrier()
@@ -2589,8 +2592,7 @@ class Trainer:
             output_dir = self.args.output_dir
 
         if is_torch_tpu_available():
-            pass
-            # self._save_tpu(output_dir)
+            self._save_tpu(output_dir)
         elif is_sagemaker_mp_enabled():
             # Calling the state_dict needs to be done on the wrapped model and on all processes.
             os.makedirs(output_dir, exist_ok=True)
